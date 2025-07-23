@@ -12,6 +12,11 @@ A simple directory listing and hashing script. It iterates through the input pat
 - Modification Time
 - Access Time
 
+## DISCLAIMER
+The script has been tested on Windows but may not have support on other OS's, feedback is greatly appreciated!
+
+USE AT YOUR OWN RISK!
+
 ## Usage
 
 ### Requirements
