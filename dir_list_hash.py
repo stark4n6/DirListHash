@@ -2,6 +2,7 @@ import hashlib
 import os
 import csv
 import datetime
+import sqlite3
 from tqdm import tqdm
 
 def hash_file(filepath, hash_type='sha1'):
@@ -14,93 +15,171 @@ def hash_file(filepath, hash_type='sha1'):
         # If hash_type is 'none' or invalid, return an empty string for the hash
         return ''
 
-    with open(filepath, "rb") as f:
-        while True:
-            chunk = f.read(4096)
-            if not chunk:
-                break
-            hasher.update(chunk)
-    return hasher.hexdigest()
+    try:
+        with open(filepath, "rb") as f:
+            while True:
+                chunk = f.read(4096)
+                if not chunk:
+                    break
+                hasher.update(chunk)
+        return hasher.hexdigest()
+    except Exception as e:
+        print(f"Error hashing file {filepath}: {e}")
+        return ''
 
 def get_file_details(filepath):
     """Retrieves file details including size and timestamps."""
-    stat_info = os.stat(filepath)
-    size = stat_info.st_size
-    creation_time = datetime.datetime.fromtimestamp(stat_info.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
-    modification_time = datetime.datetime.fromtimestamp(stat_info.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-    access_time = datetime.datetime.fromtimestamp(stat_info.st_atime).strftime("%Y-%m-%d %H:%M:%S")
-    return size, creation_time, modification_time, access_time
+    try:
+        stat_info = os.stat(filepath)
+        size = stat_info.st_size
+        creation_time = datetime.datetime.fromtimestamp(stat_info.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
+        modification_time = datetime.datetime.fromtimestamp(stat_info.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+        access_time = datetime.datetime.fromtimestamp(stat_info.st_atime).strftime("%Y-%m-%d %H:%M:%S")
+        return size, creation_time, modification_time, access_time
+    except Exception as e:
+        print(f"Error getting details for {filepath}: {e}")
+        return 0, '', '', ''
 
-def hash_directory_with_csv(directory_path, output_csv_file, hash_choice, start_time):
+def collect_directory_data(directory_path, hash_choice):
     """
-    Calculates the hash(es) of files and directories (or just lists them) and generates a CSV output.
-    The CSV includes full path, name, size, hash(es) (if chosen), and timestamps,
-    with a progress bar. It does NOT calculate an overall directory hash.
+    Collects file and directory details including hashes into a list of dictionaries.
     """
+    all_items_data = []
     total_items = 0
     for _, dirs, files in os.walk(directory_path):
         total_items += len(files)
         total_items += len(dirs)
 
-    csv_header = ['Type', 'Full Path', 'Name', 'Size (Bytes)']
+    with tqdm(total=total_items, desc="Collecting directory data", unit="item") as pbar:
+        for root, dirs, files in os.walk(directory_path):
+            for name in sorted(files):
+                filepath = os.path.join(root, name)
+                
+                file_sha1_hash = ''
+                if hash_choice in ['sha1', 'both']:
+                    file_sha1_hash = hash_file(filepath, 'sha1')
+                
+                file_md5_hash = ''
+                if hash_choice in ['md5', 'both']:
+                    file_md5_hash = hash_file(filepath, 'md5')
+
+                size, ctime, mtime, atime = get_file_details(filepath)
+                
+                all_items_data.append({
+                    'Type': 'File',
+                    'FullPath': filepath,
+                    'Name': name,
+                    'Size': size,
+                    'SHA1 Hash': file_sha1_hash,
+                    'MD5 Hash': file_md5_hash,
+                    'Creation Time': ctime,
+                    'Modification Time': mtime,
+                    'Access Time': atime
+                })
+                pbar.update(1)
+
+            for name in sorted(dirs):
+                dirpath = os.path.join(root, name)
+                stat_info = os.stat(dirpath)
+                size = stat_info.st_size # For directories, size is usually 0 or varies by OS
+                ctime = datetime.datetime.fromtimestamp(stat_info.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
+                mtime = datetime.datetime.fromtimestamp(stat_info.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                atime = datetime.datetime.fromtimestamp(stat_info.st_atime).strftime("%Y-%m-%d %H:%M:%S")
+                
+                all_items_data.append({
+                    'Type': 'Folder',
+                    'FullPath': dirpath,
+                    'Name': name,
+                    'Size': size,
+                    'SHA1 Hash': '', # Directories don't have a direct file hash
+                    'MD5 Hash': '',  # Directories don't have a direct file hash
+                    'Creation Time': ctime,
+                    'Modification Time': mtime,
+                    'Access Time': atime
+                })
+                pbar.update(1)
+    return all_items_data
+
+def export_to_csv(data, output_csv_file, hash_choice):
+    """Exports the collected data to a CSV file."""
+    csv_header = ['Type', 'Full Path', 'Name', 'Size (bytes)']
     if hash_choice in ['sha1', 'both']:
         csv_header.append('SHA1 Hash')
     if hash_choice in ['md5', 'both']:
         csv_header.append('MD5 Hash')
-    csv_header.extend(['Creation Timestamp', 'Modification Timestamp', 'Access Timestamp'])
+    csv_header.extend(['Creation Time', 'Modification Time', 'Access Time'])
 
     with open(output_csv_file, 'w', newline='', encoding='utf-8') as csvfile:
         csv_writer = csv.writer(csvfile)
         csv_writer.writerow(csv_header)
+        for item in tqdm(data, desc="Exporting to CSV", unit="item"):
+            row = [
+                item['Type'],
+                item['FullPath'],
+                item['Name'],
+                item['Size']
+            ]
+            if hash_choice in ['sha1', 'both']:
+                row.append(item['SHA1 Hash'])
+            if hash_choice in ['md5', 'both']:
+                row.append(item['MD5 Hash'])
+            row.extend([
+                item['Creation Time'],
+                item['Modification Time'],
+                item['Access Time']
+            ])
+            csv_writer.writerow(row)
 
-        with tqdm(total=total_items, desc="Processing directory", unit="item") as pbar:
-            for root, dirs, files in os.walk(directory_path):
-                for name in sorted(files):
-                    filepath = os.path.join(root, name)
-                    
-                    file_sha1_hash = ''
-                    if hash_choice in ['sha1', 'both']:
-                        file_sha1_hash = hash_file(filepath, 'sha1')
-                    
-                    file_md5_hash = ''
-                    if hash_choice in ['md5', 'both']:
-                        file_md5_hash = hash_file(filepath, 'md5')
+def export_to_sqlite(data, output_db_file, hash_choice):
+    """Exports the collected data to an SQLite database."""
+    conn = sqlite3.connect(output_db_file)
+    cursor = conn.cursor()
 
-                    size, ctime, mtime, atime = get_file_details(filepath)
-                    
-                    entry_data = ['File', filepath, name, size]
-                    if hash_choice in ['sha1', 'both']:
-                        entry_data.append(file_sha1_hash)
-                    if hash_choice in ['md5', 'both']:
-                        entry_data.append(file_md5_hash)
-                    entry_data.extend([ctime, mtime, atime])
-                    
-                    csv_writer.writerow(entry_data)
-                    pbar.update(1)
+    columns = [
+        "Type TEXT",
+        "FullPath TEXT PRIMARY KEY",
+        "Name TEXT",
+        "Size INTEGER"
+    ]
+    if hash_choice in ['sha1', 'both']:
+        columns.append('SHA1Hash TEXT')
+    if hash_choice in ['md5', 'both']:
+        columns.append('MD5Hash TEXT')
+    columns.extend(['CreationTime TEXT', 'ModificationTime TEXT', 'AccessTime TEXT'])
 
-                for name in sorted(dirs):
-                    dirpath = os.path.join(root, name)
-                    stat_info = os.stat(dirpath)
-                    size = stat_info.st_size
-                    ctime = datetime.datetime.fromtimestamp(stat_info.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
-                    mtime = datetime.datetime.fromtimestamp(stat_info.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-                    atime = datetime.datetime.fromtimestamp(stat_info.st_atime).strftime("%Y-%m-%d %H:%M:%S")
-                    
-                    entry_data = ['Folder', dirpath, name, size]
-                    if hash_choice in ['sha1', 'both']:
-                        entry_data.append('') 
-                    if hash_choice in ['md5', 'both']:
-                        entry_data.append('') 
-                    entry_data.extend([ctime, mtime, atime])
-                    
-                    csv_writer.writerow(entry_data)
-                    pbar.update(1)
+    create_table_sql = f"CREATE TABLE IF NOT EXISTS directory_contents ({', '.join(columns)})"
+    cursor.execute(create_table_sql)
+    conn.commit()
 
-    end_time = datetime.datetime.now()
-    duration = end_time - start_time
-    duration_str = str(duration)
+    for item in tqdm(data, desc="Exporting to SQLite", unit="item"):
+        entry_data = [
+            item['Type'],
+            item['FullPath'],
+            item['Name'],
+            item['Size']
+        ]
+        if hash_choice in ['sha1', 'both']:
+            entry_data.append(item['SHA1 Hash'])
+        if hash_choice in ['md5', 'both']:
+            entry_data.append(item['MD5 Hash'])
+        entry_data.extend([
+            item['Creation Time'],
+            item['Modification Time'],
+            item['Access Time']
+        ])
 
-    return duration_str
+        placeholders = ', '.join(['?'] * len(entry_data))
+        column_names_for_insert = ['Type', 'FullPath', 'Name', 'Size']
+        if hash_choice in ['sha1', 'both']:
+            column_names_for_insert.append('SHA1Hash')
+        if hash_choice in ['md5', 'both']:
+            column_names_for_insert.append('MD5Hash')
+        column_names_for_insert.extend(['CreationTime', 'ModificationTime', 'AccessTime'])
+        
+        insert_sql = f"INSERT OR REPLACE INTO directory_contents ({', '.join(column_names_for_insert)}) VALUES ({placeholders})"
+        cursor.execute(insert_sql, entry_data)
+        conn.commit()
+    conn.close()
 
 if __name__ == "__main__":
     while True:
@@ -117,24 +196,65 @@ if __name__ == "__main__":
         else:
             print("Error: Invalid choice. Please choose 'sha1', 'md5', 'both', or 'none'.")
 
-    start_time = datetime.datetime.now()
+    while True:
+        output_choice = input("Choose output format (csv, sqlite, both): ").lower()
+        if output_choice in ['csv', 'sqlite', 'both']:
+            break
+        else:
+            print("Error: Invalid choice. Please choose 'csv', 'sqlite', or 'both'.")
 
+    # Get the script's run location
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    while True:
+        output_directory_input = input(f"Enter the desired output directory for the reports (default: {script_dir}): ")
+        if not output_directory_input: # User pressed Enter, use default
+            output_directory = script_dir
+            print(f"Output directory set to default: {output_directory}")
+            break
+        elif not os.path.exists(output_directory_input):
+            try:
+                os.makedirs(output_directory_input)
+                print(f"Created output directory: {output_directory_input}")
+                output_directory = output_directory_input
+                break
+            except OSError as e:
+                print(f"Error creating directory {output_directory_input}: {e}. Please try again.")
+        elif not os.path.isdir(output_directory_input):
+            print("Error: The specified path is not a directory. Please try again.")
+        else:
+            output_directory = output_directory_input
+            break
+
+    start_time = datetime.datetime.now()
     current_datetime = datetime.datetime.now()
     timestamp_str = current_datetime.strftime("%Y-%m-%d_%H-%M-%S") 
 
     clean_path_for_filename = directory_to_hash.replace(os.sep, '_').replace(':', '_').replace(' ', '_')
     clean_path_for_filename = clean_path_for_filename.strip('_') 
 
-    output_csv_file = f"directory_listing_{clean_path_for_filename}_{timestamp_str}.csv"
-    if hash_choice != 'none':
-        output_csv_file = f"directory_hash_report_{clean_path_for_filename}_{timestamp_str}.csv" # Use "hash_report" if hashing
-
-
     print(f"\nProcess started at: {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
 
-    duration = hash_directory_with_csv(directory_to_hash, output_csv_file, hash_choice, start_time)
+    # Collect all data once
+    collected_data = collect_directory_data(directory_to_hash, hash_choice)
 
-    print(f"Process finished at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    if output_choice in ['csv', 'both']:
+        csv_filename = f"directory_listing_{clean_path_for_filename}_{timestamp_str}.csv"
+        if hash_choice != 'none':
+            csv_filename = f"directory_hash_report_{clean_path_for_filename}_{timestamp_str}.csv"
+        output_csv_file = os.path.join(output_directory, csv_filename)
+        export_to_csv(collected_data, output_csv_file, hash_choice)
+        print(f"Details exported to CSV: {output_csv_file}")
+
+    if output_choice in ['sqlite', 'both']:
+        db_filename = f"directory_listing_{clean_path_for_filename}_{timestamp_str}.db"
+        if hash_choice != 'none':
+            db_filename = f"directory_hash_report_{clean_path_for_filename}_{timestamp_str}.db"
+        output_db_file = os.path.join(output_directory, db_filename)
+        export_to_sqlite(collected_data, output_db_file, hash_choice)
+        print(f"Details exported to SQLite: {output_db_file}")
+
+    end_time = datetime.datetime.now()
+    duration = end_time - start_time
+    print(f"\nProcess finished at: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Total duration: {duration}")
-
-    print(f"Details exported to: {output_csv_file}")
