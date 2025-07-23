@@ -21,6 +21,6 @@ USE AT YOUR OWN RISK!
 
 ### Options
 1. Input path
-2. Hashing choice (sha1, md5, both or none)
-3. Output type (csv, sqlite, both)
+2. Hashing options (sha1, md5, both or none)
+3. Output options (csv, sqlite, both)
 4. Output path
