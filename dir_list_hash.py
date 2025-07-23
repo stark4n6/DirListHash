@@ -5,6 +5,9 @@ import datetime
 import sqlite3
 import sys # Import sys for `sys.stdout.write` and `sys.stdout.flush`
 
+app_name = "DirListHash"
+app_version = "v1.0"
+
 def hash_file(filepath, hash_type='sha1'):
     """Calculates the hash of a given file based on hash_type."""
     if hash_type.lower() == 'md5':
@@ -215,6 +218,8 @@ def export_to_sqlite(data, output_db_file, hash_choice):
 
 
 if __name__ == "__main__":
+    print(f"{app_name} {app_version}")
+    print(f"https://github.com/stark4n6/DirListHash")
     while True:
         directory_to_hash = input("Enter the path of the directory you want to list/hash (e.g., C:\\MyFiles or /home/user/documents): ")
         if os.path.isdir(directory_to_hash):
