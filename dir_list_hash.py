@@ -11,7 +11,8 @@ def hash_file(filepath, hash_type='sha1'):
     elif hash_type.lower() == 'sha1':
         hasher = hashlib.sha1()
     else:
-        raise ValueError("Invalid hash type specified. Choose 'md5' or 'sha1'.")
+        # If hash_type is 'none' or invalid, return an empty string for the hash
+        return ''
 
     with open(filepath, "rb") as f:
         while True:
@@ -32,8 +33,8 @@ def get_file_details(filepath):
 
 def hash_directory_with_csv(directory_path, output_csv_file, hash_choice, start_time):
     """
-    Calculates the hash(es) of files and directories and generates a CSV output.
-    The CSV includes full path, name, size, hash(es), and timestamps,
+    Calculates the hash(es) of files and directories (or just lists them) and generates a CSV output.
+    The CSV includes full path, name, size, hash(es) (if chosen), and timestamps,
     with a progress bar. It does NOT calculate an overall directory hash.
     """
     total_items = 0
@@ -41,12 +42,12 @@ def hash_directory_with_csv(directory_path, output_csv_file, hash_choice, start_
         total_items += len(files)
         total_items += len(dirs)
 
-    csv_header = ['Type', 'Full Path', 'Name', 'Size (bytes)']
+    csv_header = ['Type', 'Full Path', 'Name', 'Size (Bytes)']
     if hash_choice in ['sha1', 'both']:
         csv_header.append('SHA1 Hash')
     if hash_choice in ['md5', 'both']:
         csv_header.append('MD5 Hash')
-    csv_header.extend(['Creation Time', 'Modification Time', 'Access Time'])
+    csv_header.extend(['Creation Timestamp', 'Modification Timestamp', 'Access Timestamp'])
 
     with open(output_csv_file, 'w', newline='', encoding='utf-8') as csvfile:
         csv_writer = csv.writer(csvfile)
@@ -103,18 +104,18 @@ def hash_directory_with_csv(directory_path, output_csv_file, hash_choice, start_
 
 if __name__ == "__main__":
     while True:
-        directory_to_hash = input("Enter the path of the directory you want to hash (e.g., C:\\MyFiles or /home/user/documents): ")
+        directory_to_hash = input("Enter the path of the directory you want to list/hash (e.g., C:\\MyFiles or /home/user/documents): ")
         if os.path.isdir(directory_to_hash):
             break
         else:
             print("Error: The specified path is not a valid directory or does not exist. Please try again.")
 
     while True:
-        hash_choice = input("Choose hash type (sha1, md5, or both): ").lower()
-        if hash_choice in ['sha1', 'md5', 'both']:
+        hash_choice = input("Choose hash type (sha1, md5, both, or none): ").lower()
+        if hash_choice in ['sha1', 'md5', 'both', 'none']:
             break
         else:
-            print("Error: Invalid hash choice. Please choose 'sha1', 'md5', or 'both'.")
+            print("Error: Invalid choice. Please choose 'sha1', 'md5', 'both', or 'none'.")
 
     start_time = datetime.datetime.now()
 
@@ -124,9 +125,11 @@ if __name__ == "__main__":
     clean_path_for_filename = directory_to_hash.replace(os.sep, '_').replace(':', '_').replace(' ', '_')
     clean_path_for_filename = clean_path_for_filename.strip('_') 
 
-    output_csv_file = f"dir_list_hash_report_{clean_path_for_filename}_{timestamp_str}.csv"
+    output_csv_file = f"directory_listing_{clean_path_for_filename}_{timestamp_str}.csv"
+    if hash_choice != 'none':
+        output_csv_file = f"directory_hash_report_{clean_path_for_filename}_{timestamp_str}.csv" # Use "hash_report" if hashing
 
-    # Print the start timestamp *before* calling the function with tqdm
+
     print(f"\nProcess started at: {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
 
     duration = hash_directory_with_csv(directory_to_hash, output_csv_file, hash_choice, start_time)
