@@ -27,5 +27,5 @@ TQDM only used for progress bar purposes
 ### Options
 1. Input path
 2. Hashing choice (sha1, md5, both or none)
-
-Output will be a CSV file saved to the location of the script.
+3. Output type (csv, sqlite, both)
+4. Output path
