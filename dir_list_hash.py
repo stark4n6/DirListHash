@@ -3,7 +3,7 @@ import os
 import csv
 import datetime
 import sqlite3
-from tqdm import tqdm
+import sys # Import sys for `sys.stdout.write` and `sys.stdout.flush`
 
 def hash_file(filepath, hash_type='sha1'):
     """Calculates the hash of a given file based on hash_type."""
@@ -24,7 +24,8 @@ def hash_file(filepath, hash_type='sha1'):
                 hasher.update(chunk)
         return hasher.hexdigest()
     except Exception as e:
-        print(f"Error hashing file {filepath}: {e}")
+        sys.stdout.write(f"\nError hashing file {filepath}: {e}\n")
+        sys.stdout.flush()
         return ''
 
 def get_file_details(filepath):
@@ -37,7 +38,8 @@ def get_file_details(filepath):
         access_time = datetime.datetime.fromtimestamp(stat_info.st_atime).strftime("%Y-%m-%d %H:%M:%S")
         return size, creation_time, modification_time, access_time
     except Exception as e:
-        print(f"Error getting details for {filepath}: {e}")
+        sys.stdout.write(f"\nError getting details for {filepath}: {e}\n")
+        sys.stdout.flush()
         return 0, '', '', ''
 
 def collect_directory_data(directory_path, hash_choice):
@@ -50,54 +52,69 @@ def collect_directory_data(directory_path, hash_choice):
         total_items += len(files)
         total_items += len(dirs)
 
-    with tqdm(total=total_items, desc="Collecting directory data", unit="item") as pbar:
-        for root, dirs, files in os.walk(directory_path):
-            for name in sorted(files):
-                filepath = os.path.join(root, name)
-                
-                file_sha1_hash = ''
-                if hash_choice in ['sha1', 'both']:
-                    file_sha1_hash = hash_file(filepath, 'sha1')
-                
-                file_md5_hash = ''
-                if hash_choice in ['md5', 'both']:
-                    file_md5_hash = hash_file(filepath, 'md5')
+    current_item_count = 0
+    for root, dirs, files in os.walk(directory_path):
+        for name in sorted(files):
+            filepath = os.path.join(root, name)
+            current_item_count += 1
+            
+            # Print progress and current item
+            sys.stdout.write(f"\rCollecting data: {current_item_count}/{total_items}")
+            sys.stdout.flush()
+            sys.stdout.write(f"\nProcessing: {filepath}\n")
+            sys.stdout.flush()
 
-                size, ctime, mtime, atime = get_file_details(filepath)
-                
-                all_items_data.append({
-                    'Type': 'File',
-                    'FullPath': filepath,
-                    'Name': name,
-                    'Size': size,
-                    'SHA1 Hash': file_sha1_hash,
-                    'MD5 Hash': file_md5_hash,
-                    'Creation Time': ctime,
-                    'Modification Time': mtime,
-                    'Access Time': atime
-                })
-                pbar.update(1)
+            file_sha1_hash = ''
+            if hash_choice in ['sha1', 'both']:
+                file_sha1_hash = hash_file(filepath, 'sha1')
+            
+            file_md5_hash = ''
+            if hash_choice in ['md5', 'both']:
+                file_md5_hash = hash_file(filepath, 'md5')
 
-            for name in sorted(dirs):
-                dirpath = os.path.join(root, name)
-                stat_info = os.stat(dirpath)
-                size = stat_info.st_size # For directories, size is usually 0 or varies by OS
-                ctime = datetime.datetime.fromtimestamp(stat_info.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
-                mtime = datetime.datetime.fromtimestamp(stat_info.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-                atime = datetime.datetime.fromtimestamp(stat_info.st_atime).strftime("%Y-%m-%d %H:%M:%S")
-                
-                all_items_data.append({
-                    'Type': 'Folder',
-                    'FullPath': dirpath,
-                    'Name': name,
-                    'Size': size,
-                    'SHA1 Hash': '', # Directories don't have a direct file hash
-                    'MD5 Hash': '',  # Directories don't have a direct file hash
-                    'Creation Time': ctime,
-                    'Modification Time': mtime,
-                    'Access Time': atime
-                })
-                pbar.update(1)
+            size, ctime, mtime, atime = get_file_details(filepath)
+            
+            all_items_data.append({
+                'Type': 'File',
+                'FullPath': filepath,
+                'Name': name,
+                'Size': size,
+                'SHA1 Hash': file_sha1_hash,
+                'MD5 Hash': file_md5_hash,
+                'Creation Time': ctime,
+                'Modification Time': mtime,
+                'Access Time': atime
+            })
+
+        for name in sorted(dirs):
+            dirpath = os.path.join(root, name)
+            current_item_count += 1
+            
+            # Print progress and current item
+            sys.stdout.write(f"\rCollecting data: {current_item_count}/{total_items}")
+            sys.stdout.flush()
+            sys.stdout.write(f"\nProcessing: {dirpath}\n")
+            sys.stdout.flush()
+
+            stat_info = os.stat(dirpath)
+            size = stat_info.st_size # For directories, size is usually 0 or varies by OS
+            ctime = datetime.datetime.fromtimestamp(stat_info.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
+            mtime = datetime.datetime.fromtimestamp(stat_info.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            atime = datetime.datetime.fromtimestamp(stat_info.st_atime).strftime("%Y-%m-%d %H:%M:%S")
+            
+            all_items_data.append({
+                'Type': 'Folder',
+                'FullPath': dirpath,
+                'Name': name,
+                'Size': size,
+                'SHA1 Hash': '', # Directories don't have a direct file hash
+                'MD5 Hash': '',  # Directories don't have a direct file hash
+                'Creation Time': ctime,
+                'Modification Time': mtime,
+                'Access Time': atime
+            })
+    sys.stdout.write(f"\rCollecting data: {total_items}/{total_items}\n") # Final update
+    sys.stdout.flush()
     return all_items_data
 
 def export_to_csv(data, output_csv_file, hash_choice):
@@ -109,10 +126,15 @@ def export_to_csv(data, output_csv_file, hash_choice):
         csv_header.append('MD5 Hash')
     csv_header.extend(['Creation Time', 'Modification Time', 'Access Time'])
 
+    total_items = len(data)
     with open(output_csv_file, 'w', newline='', encoding='utf-8') as csvfile:
         csv_writer = csv.writer(csvfile)
         csv_writer.writerow(csv_header)
-        for item in tqdm(data, desc="Exporting to CSV", unit="item"):
+        for i, item in enumerate(data):
+            # Print progress
+            sys.stdout.write(f"\rExporting to CSV: {i+1}/{total_items}")
+            sys.stdout.flush()
+
             row = [
                 item['Type'],
                 item['FullPath'],
@@ -129,6 +151,9 @@ def export_to_csv(data, output_csv_file, hash_choice):
                 item['Access Time']
             ])
             csv_writer.writerow(row)
+    sys.stdout.write(f"\rExporting to CSV: {total_items}/{total_items}\n") # Final update
+    sys.stdout.flush()
+
 
 def export_to_sqlite(data, output_db_file, hash_choice):
     """Exports the collected data to an SQLite database."""
@@ -151,7 +176,12 @@ def export_to_sqlite(data, output_db_file, hash_choice):
     cursor.execute(create_table_sql)
     conn.commit()
 
-    for item in tqdm(data, desc="Exporting to SQLite", unit="item"):
+    total_items = len(data)
+    for i, item in enumerate(data):
+        # Print progress
+        sys.stdout.write(f"\rExporting to SQLite: {i+1}/{total_items}")
+        sys.stdout.flush()
+
         entry_data = [
             item['Type'],
             item['FullPath'],
@@ -180,6 +210,9 @@ def export_to_sqlite(data, output_db_file, hash_choice):
         cursor.execute(insert_sql, entry_data)
         conn.commit()
     conn.close()
+    sys.stdout.write(f"\rExporting to SQLite: {total_items}/{total_items}\n") # Final update
+    sys.stdout.flush()
+
 
 if __name__ == "__main__":
     while True:
