@@ -47,25 +47,33 @@ def get_file_details(filepath):
 
 def collect_directory_data(directory_path, hash_choice):
     """
-    Collects file and directory details including hashes into a list of dictionaries.
+    Collects file and directory details including hashes into a list of dictionaries,
+    with optimized progress reporting (counter only, no path printing).
     """
     all_items_data = []
     total_items = 0
+    # First pass to get total count
     for _, dirs, files in os.walk(directory_path):
         total_items += len(files)
         total_items += len(dirs)
 
     current_item_count = 0
+    # Optimization: Only update progress every N items
+    progress_interval = max(1, total_items // 1000) 
+    
     for root, dirs, files in os.walk(directory_path):
         for name in sorted(files):
             filepath = os.path.join(root, name)
             current_item_count += 1
             
-            # Print progress and current item
-            sys.stdout.write(f"\rCollecting data: {current_item_count}/{total_items}")
-            sys.stdout.flush()
-            sys.stdout.write(f"\nProcessing: {filepath}\n")
-            sys.stdout.flush()
+            # Print progress and current item (Reduced frequency)
+            if current_item_count % progress_interval == 0:
+                sys.stdout.write(f"\rCollecting data: {current_item_count}/{total_items}")
+                sys.stdout.flush()
+                
+            # Removed the path printing for speed optimization
+            # sys.stdout.write(f"\nProcessing: {filepath}\n") 
+            # sys.stdout.flush()
 
             file_sha1_hash = ''
             if hash_choice in ['sha1', 'both']:
@@ -93,11 +101,14 @@ def collect_directory_data(directory_path, hash_choice):
             dirpath = os.path.join(root, name)
             current_item_count += 1
             
-            # Print progress and current item
-            sys.stdout.write(f"\rCollecting data: {current_item_count}/{total_items}")
-            sys.stdout.flush()
-            sys.stdout.write(f"\nProcessing: {dirpath}\n")
-            sys.stdout.flush()
+            # Print progress and current item (Reduced frequency)
+            if current_item_count % progress_interval == 0:
+                sys.stdout.write(f"\rCollecting data: {current_item_count}/{total_items}")
+                sys.stdout.flush()
+                
+            # Removed the path printing for speed optimization
+            # sys.stdout.write(f"\nProcessing: {dirpath}\n")
+            # sys.stdout.flush()
 
             stat_info = os.stat(dirpath)
             size = stat_info.st_size # For directories, size is usually 0 or varies by OS
@@ -116,12 +127,14 @@ def collect_directory_data(directory_path, hash_choice):
                 'Modification Time': mtime,
                 'Access Time': atime
             })
-    sys.stdout.write(f"\rCollecting data: {total_items}/{total_items}\n") # Final update
+            
+    # Final update to show 100% completion
+    sys.stdout.write(f"\rCollecting data: {total_items}/{total_items}\n") 
     sys.stdout.flush()
     return all_items_data
 
 def export_to_csv(data, output_csv_file, hash_choice):
-    """Exports the collected data to a CSV file."""
+    """Exports the collected data to a CSV file with optimized progress reporting."""
     csv_header = ['Type', 'Full Path', 'Name', 'Size (bytes)']
     if hash_choice in ['sha1', 'both']:
         csv_header.append('SHA1 Hash')
@@ -130,13 +143,17 @@ def export_to_csv(data, output_csv_file, hash_choice):
     csv_header.extend(['Creation Time', 'Modification Time', 'Access Time'])
 
     total_items = len(data)
+    progress_interval = max(1, total_items // 1000) # Update at least once, or every 1/1000th of the items
+    
     with open(output_csv_file, 'w', newline='', encoding='utf-8') as csvfile:
         csv_writer = csv.writer(csvfile)
         csv_writer.writerow(csv_header)
         for i, item in enumerate(data):
-            # Print progress
-            sys.stdout.write(f"\rExporting to CSV: {i+1}/{total_items}")
-            sys.stdout.flush()
+            
+            # --- OPTIMIZATION: Update progress less frequently ---
+            if (i + 1) % progress_interval == 0:
+                sys.stdout.write(f"\rExporting to CSV: {i+1}/{total_items}")
+                sys.stdout.flush()
 
             row = [
                 item['Type'],
@@ -154,12 +171,14 @@ def export_to_csv(data, output_csv_file, hash_choice):
                 item['Access Time']
             ])
             csv_writer.writerow(row)
-    sys.stdout.write(f"\rExporting to CSV: {total_items}/{total_items}\n") # Final update
+            
+    # Final update to show 100% completion
+    sys.stdout.write(f"\rExporting to CSV: {total_items}/{total_items}\n") 
     sys.stdout.flush()
 
 
 def export_to_sqlite(data, output_db_file, hash_choice):
-    """Exports the collected data to an SQLite database."""
+    """Exports the collected data to an SQLite database using bulk insertion."""
     conn = sqlite3.connect(output_db_file)
     cursor = conn.cursor()
 
@@ -177,12 +196,26 @@ def export_to_sqlite(data, output_db_file, hash_choice):
 
     create_table_sql = f"CREATE TABLE IF NOT EXISTS directory_contents ({', '.join(columns)})"
     cursor.execute(create_table_sql)
-    conn.commit()
+    # conn.commit() # Removed: No need to commit yet
 
+    column_names_for_insert = ['Type', 'FullPath', 'Name', 'Size']
+    if hash_choice in ['sha1', 'both']:
+        column_names_for_insert.append('SHA1Hash')
+    if hash_choice in ['md5', 'both']:
+        column_names_for_insert.append('MD5Hash')
+    column_names_for_insert.extend(['CreationTime', 'ModificationTime', 'AccessTime'])
+    
+    placeholders = ', '.join(['?'] * len(column_names_for_insert))
+    insert_sql = f"INSERT OR REPLACE INTO directory_contents ({', '.join(column_names_for_insert)}) VALUES ({placeholders})"
+
+    # --- OPTIMIZATION: Prepare data for executemany ---
+    
+    entry_data_list = []
     total_items = len(data)
+    
     for i, item in enumerate(data):
-        # Print progress
-        sys.stdout.write(f"\rExporting to SQLite: {i+1}/{total_items}")
+        # Print progress (optional but good for user feedback)
+        sys.stdout.write(f"\rPreparing data for SQLite: {i+1}/{total_items}")
         sys.stdout.flush()
 
         entry_data = [
@@ -200,22 +233,30 @@ def export_to_sqlite(data, output_db_file, hash_choice):
             item['Modification Time'],
             item['Access Time']
         ])
-
-        placeholders = ', '.join(['?'] * len(entry_data))
-        column_names_for_insert = ['Type', 'FullPath', 'Name', 'Size']
-        if hash_choice in ['sha1', 'both']:
-            column_names_for_insert.append('SHA1Hash')
-        if hash_choice in ['md5', 'both']:
-            column_names_for_insert.append('MD5Hash')
-        column_names_for_insert.extend(['CreationTime', 'ModificationTime', 'AccessTime'])
         
-        insert_sql = f"INSERT OR REPLACE INTO directory_contents ({', '.join(column_names_for_insert)}) VALUES ({placeholders})"
-        cursor.execute(insert_sql, entry_data)
-        conn.commit()
-    conn.close()
+        # entry_data must be a tuple for executemany
+        entry_data_list.append(tuple(entry_data))
+
+    sys.stdout.write(f"\rPreparing data for SQLite: {total_items}/{total_items}\n") # Final update
+    sys.stdout.flush()
+    
+    # --- OPTIMIZATION: Use executemany for bulk insertion ---
+    sys.stdout.write(f"Executing bulk insert into SQLite...\n")
+    sys.stdout.flush()
+    
+    try:
+        # Use executemany to insert all rows in one go
+        cursor.executemany(insert_sql, entry_data_list)
+        # Commit the transaction only once after all insertions
+        conn.commit() 
+    except Exception as e:
+        sys.stdout.write(f"\nError during bulk insert: {e}\n")
+        conn.rollback() # Rollback on error
+    finally:
+        conn.close()
+        
     sys.stdout.write(f"\rExporting to SQLite: {total_items}/{total_items}\n") # Final update
     sys.stdout.flush()
-
 
 if __name__ == "__main__":
     print(f"{app_name} {app_version}")
