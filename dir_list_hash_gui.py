@@ -9,6 +9,7 @@ from tkinter import filedialog, messagebox
 import threading
 import subprocess
 import platform
+from PIL import Image
 
 # --- Core Logic Functions (Optimized) ---
 
@@ -278,32 +279,49 @@ class DirListHashApp(ctk.CTk):
 
         # --- Basic Setup ---
         self.title(f"{app_name} {app_version}")
-        self.geometry("800x650")
-        # NEW: Lock the window size
+        self.geometry("800x820")
+        # Lock the window size
         self.resizable(False, False) 
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(3, weight=1)
+        # The log frame is at row 4, so we want it to expand
+        self.grid_rowconfigure(4, weight=1) 
         
         # Variables
         self.input_dir_path = ctk.StringVar(value="") 
         self.output_dir_path = ctk.StringVar(value="") 
         self.hash_choice = ctk.StringVar(value="none") 
         self.output_choice = ctk.StringVar(value="csv")
-        self.final_output_dir = None # To store the dynamically created timestamped folder path
+        self.final_output_dir = None 
         
         # --- Widgets ---
+        self._create_log_frame()
+        self._create_image_header()
         self._create_input_frame()
         self._create_options_frame()
-        self._create_log_frame()
         self._create_status_frame()
         
         # Set default appearance
         ctk.set_appearance_mode("System")
         ctk.set_default_color_theme("blue")
 
+    def _create_image_header(self):
+        image_frame = ctk.CTkFrame(self, fg_color="transparent")
+        image_frame.grid(row=0, column=0, padx=20, pady=(10, 0), sticky="ew")
+        image_frame.grid_columnconfigure(0, weight=1)
+
+        try:
+            image_path = os.path.join(os.path.dirname(__file__), "logo.png")
+            app_image = ctk.CTkImage(Image.open(image_path), size=(150, 150)) 
+            image_label = ctk.CTkLabel(image_frame, image=app_image, text="") 
+            image_label.grid(row=0, column=0, pady=10) 
+        except FileNotFoundError:
+            self.log("WARNING: 'logo.png' not found. Skipping image display.")
+        except Exception as e:
+            self.log(f"ERROR loading image: {e}")
+
     def _create_input_frame(self):
         input_frame = ctk.CTkFrame(self, fg_color="transparent")
-        input_frame.grid(row=0, column=0, padx=20, pady=(10, 5), sticky="ew")
+        input_frame.grid(row=1, column=0, padx=20, pady=(10, 5), sticky="ew")
         input_frame.columnconfigure(1, weight=1)
         
         # Input Directory
@@ -318,7 +336,7 @@ class DirListHashApp(ctk.CTk):
 
     def _create_options_frame(self):
         options_frame = ctk.CTkFrame(self, fg_color="transparent")
-        options_frame.grid(row=1, column=0, padx=20, pady=5, sticky="ew")
+        options_frame.grid(row=2, column=0, padx=20, pady=5, sticky="ew")
         options_frame.columnconfigure(0, weight=1)
         options_frame.columnconfigure(1, weight=1)
 
@@ -343,16 +361,16 @@ class DirListHashApp(ctk.CTk):
         # Start Button
         start_button = ctk.CTkButton(self, 
                                      text="▶️ Start Scan and Export", 
-                                     command=self.start_processing_thread, # Standard method reference
+                                     command=self.start_processing_thread, 
                                      font=ctk.CTkFont(size=16, weight="bold"), 
                                      height=40)
-        start_button.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+        start_button.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
         self.start_button = start_button 
     
     def _create_log_frame(self):
-        # Log Text Area
+        # Log Text Area - Placed at row 4
         log_frame = ctk.CTkFrame(self)
-        log_frame.grid(row=3, column=0, padx=20, pady=(0, 10), sticky="nsew")
+        log_frame.grid(row=4, column=0, padx=20, pady=(0, 10), sticky="nsew")
         log_frame.grid_columnconfigure(0, weight=1)
         log_frame.grid_rowconfigure(0, weight=1)
         
@@ -363,32 +381,30 @@ class DirListHashApp(ctk.CTk):
 
     def _create_status_frame(self):
         status_frame = ctk.CTkFrame(self, fg_color="transparent")
-        status_frame.grid(row=4, column=0, padx=20, pady=(0, 10), sticky="ew")
+        status_frame.grid(row=5, column=0, padx=20, pady=(0, 10), sticky="ew")
         status_frame.columnconfigure(0, weight=1)
         
         # Progress Counter Label
         self.status_label = ctk.CTkLabel(status_frame, text="Ready.")
         self.status_label.grid(row=0, column=0, padx=(0, 10), pady=5, sticky="w")
-        
-        # Keep a dummy variable for the progress bar to avoid errors in other methods that call it
-        self.progress_bar = None 
-
 
     # --- Utility Methods ---
     
     def log(self, message):
-        """Appends a timestamped message to the log box."""
+        """Appends a timestamped message to the log box, with console fallback."""
         timestamp = datetime.datetime.now().strftime("[%H:%M:%S]")
-        # Normalize the path for consistent log output
         normalized_message = os.path.normpath(message) if ('\\' in message and os.name == 'nt') or ('/' in message and os.name != 'nt') else message 
-        self.log_text.insert("end", f"{timestamp} {normalized_message}\n")
-        self.log_text.see("end")
+        full_message = f"{timestamp} {normalized_message}"
+        
+        # FIX: Check if log_text exists before trying to use it
+        if hasattr(self, 'log_text'):
+            self.log_text.insert("end", full_message + "\n")
+            self.log_text.see("end")
+        else:
+            print(full_message) # Fallback to console if GUI isn't ready
     
     def update_counter(self, current, total, text):
-        """
-        Updates the GUI status label with the counter (current/total) and text.
-        Throttled by the calling functions.
-        """
+        """Updates the GUI status label with the counter (current/total) and text."""
         self.after(0, self._set_gui_counter, current, total, text)
         
     def _set_gui_counter(self, current, total, text):
@@ -402,9 +418,7 @@ class DirListHashApp(ctk.CTk):
             return
             
         try:
-            log_content = self.log_text.get("1.0", "end-1c") # Get all text except final newline
-            
-            # Create a clean log file name based on the current run
+            log_content = self.log_text.get("1.0", "end-1c") 
             log_filename = "Activity_Log_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".txt"
             log_filepath = os.path.normpath(os.path.join(self.final_output_dir, log_filename))
             
@@ -412,10 +426,8 @@ class DirListHashApp(ctk.CTk):
                 f.write(log_content)
             
             self.log(f"Activity log successfully written to: {log_filepath}")
-            
         except Exception as e:
             self.log(f"ERROR writing activity log to file: {e}")
-
 
     # --- Button Commands ---
 
@@ -423,45 +435,36 @@ class DirListHashApp(ctk.CTk):
         """Opens a dialog to select the directory to scan/hash."""
         folder_selected = filedialog.askdirectory(title="Select Directory to Scan")
         if folder_selected:
-            # FIX: Replace forward slashes with backslashes for Windows GUI presentation
-            normalized_path = folder_selected.replace('/', '\\')
+            normalized_path = folder_selected.replace('/', '\\') if platform.system() == "Windows" else folder_selected
             self.input_dir_path.set(normalized_path)
 
     def select_output_dir(self):
         """Opens a dialog to select the directory for report output."""
         folder_selected = filedialog.askdirectory(title="Select Output Directory for Reports")
         if folder_selected:
-            # FIX: Replace forward slashes with backslashes for Windows GUI presentation
-            normalized_path = folder_selected.replace('/', '\\')
+            normalized_path = folder_selected.replace('/', '\\') if platform.system() == "Windows" else folder_selected
             self.output_dir_path.set(normalized_path)
 
     # --- Processing Logic ---
 
     def start_processing_thread(self):
-        """Starts the main processing logic in a separate thread to keep the GUI responsive."""
+        """Starts the main processing logic in a separate thread."""
         if not self.input_dir_path.get() or not os.path.isdir(self.input_dir_path.get()):
             messagebox.showerror("Input Error", "Please select a valid input directory.")
             return
 
-        # Reset final output directory before a new run
         self.final_output_dir = None
-
-        # Disable button while processing
         self.start_button.configure(state="disabled", text="Processing...")
-        
         self.status_label.configure(text="Starting process...")
         self.log_text.delete("1.0", "end")
         
-        # Log Application Info
         self.log(f"--- {app_name} {app_version} ---")
-
         self.log(f"Process started at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         self.log(f"Input Directory: {self.input_dir_path.get()}")
         self.log(f"Output Directory: {self.output_dir_path.get()}")
         self.log(f"Hash Type: {self.hash_choice.get()}")
         self.log(f"Output Format: {self.output_choice.get()}")
         
-        # Start the heavy lifting in a new thread
         self.worker_thread = threading.Thread(target=self._process_directory)
         self.worker_thread.start()
 
@@ -473,13 +476,10 @@ class DirListHashApp(ctk.CTk):
             hash_choice = self.hash_choice.get()
             output_choice = self.output_choice.get()
             
-            # --- 1. Create Timestamped Output Folder ---
             current_datetime = datetime.datetime.now()
-            # Timestamp format YYYYMMDD_HHMMSS used for folders and files
             timestamp_str = current_datetime.strftime("%Y%m%d_%H%M%S") 
             output_folder_name = f"DirListHash_Out_{timestamp_str}"
             
-            # Check if output_dir_base is empty and set to CWD if necessary for folder creation
             if not output_dir_base:
                 output_dir_base = os.getcwd()
 
@@ -488,28 +488,18 @@ class DirListHashApp(ctk.CTk):
             if not os.path.exists(output_dir_final):
                 os.makedirs(output_dir_final)
             
-            # Store the final directory path for log writing
             self.final_output_dir = output_dir_final 
             self.log(f"Created output directory: {self.final_output_dir}")
 
-            # 2. Collect Data
             self.log("Starting data collection...")
-            # collect_directory_data ensures FullPath is OS-normalized for exports.
             collected_data = collect_directory_data(input_dir, hash_choice, self.update_counter) 
             self.log(f"Collected data for {len(collected_data)} items.")
-
-            # 3. Generate Filename 
             
-            # Sanitize the input path for a filename
             clean_path = input_dir.replace('\\', '_').replace('/', '_').replace(':', '_').replace(' ', '_').strip('_')
-            
-            if not clean_path:
-                clean_path = "root"
+            if not clean_path: clean_path = "root"
 
-            # Use the simple, consistent timestamp_str for the file suffix
             base_filename = f"directory_{hash_choice if hash_choice != 'none' else 'listing'}_{clean_path}_{timestamp_str}"
 
-            # 4. Export Data
             if output_choice in ['csv', 'both']:
                 csv_filename = base_filename + ".csv"
                 output_csv_file = os.path.normpath(os.path.join(self.final_output_dir, csv_filename)) 
@@ -524,57 +514,37 @@ class DirListHashApp(ctk.CTk):
                 export_to_sqlite(collected_data, output_db_file, hash_choice, self.update_counter)
                 self.log("SQLite Export finished.")
 
-            # 5. Finalize
             self.after(0, self._finalize_success)
 
         except Exception as e:
-            # Handle error in the main thread
             self.after(0, self._finalize_error, e)
             
     def _finalize_success(self):
         """Runs in the main thread after successful processing."""
-        # Log the final time
         end_time = datetime.datetime.now()
         self.log(f"Process finished successfully at: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        # Write the log to file before showing success message
         self._write_log_to_file()
-
-        # Update GUI status
         self.status_label.configure(text="Process Complete!")
         self.start_button.configure(state="normal", text="▶️ Start Scan and Export")
         
-        # Show custom dialog with option to open the folder
         if self.final_output_dir and os.path.isdir(self.final_output_dir):
-            response = messagebox.askyesno(
-                "Success!", 
-                "Directory scan and export finished successfully!\n\nDo you want to open the export folder?",
-                icon='info',
-                default='yes',
-            )
-            if response: # If 'Yes' is clicked
-                open_export_folder(self.final_output_dir)
+            response = messagebox.askyesno("Success!", "Directory scan finished!\n\nOpen export folder?", icon='info', default='yes')
+            if response: open_export_folder(self.final_output_dir)
         else:
-            # Fallback to simple alert if the directory couldn't be created/found
             messagebox.showinfo("Success", "Directory scan and export finished successfully!")
-
 
     def _finalize_error(self, e):
         """Runs in the main thread after an error."""
         self.log(f"ERROR: {e}")
-        
-        # Attempt to write the log file even on error
         self._write_log_to_file()
-        
         self.status_label.configure(text="ERROR! Check log.")
         self.start_button.configure(state="normal", text="▶️ Start Scan and Export")
-        messagebox.showerror("Error", f"An error occurred during processing: {e}")
+        messagebox.showerror("Error", f"An error occurred: {e}")
 
 # --- Execution ---
 
 if __name__ == "__main__":
     ctk.set_appearance_mode("System")
     ctk.set_default_color_theme("blue")
-    
     app = DirListHashApp()
     app.mainloop()

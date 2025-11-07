@@ -71,10 +71,6 @@ def collect_directory_data(directory_path, hash_choice):
                 sys.stdout.write(f"\rCollecting data: {current_item_count}/{total_items}")
                 sys.stdout.flush()
                 
-            # Removed the path printing for speed optimization
-            # sys.stdout.write(f"\nProcessing: {filepath}\n") 
-            # sys.stdout.flush()
-
             file_sha1_hash = ''
             if hash_choice in ['sha1', 'both']:
                 file_sha1_hash = hash_file(filepath, 'sha1')
@@ -105,10 +101,6 @@ def collect_directory_data(directory_path, hash_choice):
             if current_item_count % progress_interval == 0:
                 sys.stdout.write(f"\rCollecting data: {current_item_count}/{total_items}")
                 sys.stdout.flush()
-                
-            # Removed the path printing for speed optimization
-            # sys.stdout.write(f"\nProcessing: {dirpath}\n")
-            # sys.stdout.flush()
 
             stat_info = os.stat(dirpath)
             size = stat_info.st_size # For directories, size is usually 0 or varies by OS
